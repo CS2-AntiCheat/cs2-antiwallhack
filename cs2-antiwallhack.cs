@@ -232,6 +232,6 @@ public class AntiWallhack : BasePlugin
         var absOrigin = playerPawn.AbsOrigin;
         return absOrigin != null
             ? new Vector3(absOrigin.X, absOrigin.Y, absOrigin.Z + playerPawn.ViewOffset.Z)
-            : (Vector3?)null;
+            : null;
     }
 }
