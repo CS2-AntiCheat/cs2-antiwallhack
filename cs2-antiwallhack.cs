@@ -13,13 +13,13 @@ namespace AntiWallhack;
 public class AntiWallhack : BasePlugin
 {
     public override string ModuleName => "Anti Wallhack";
-    public override string ModuleVersion => "v1";
+    public override string ModuleVersion => "v2";
     public override string ModuleAuthor => "schwarper";
     public override string ModuleDescription => "Prevents wall hacks from working";
 
     private const uint MASK_STANDARD_SOLID = 0x1 | 0x4000 | 0x80 | 0x2000;
     private ConVar? mp_teammates_are_enemies;
-    private readonly Dictionary<CCSPlayerController, List<nint>> _playerDataList = [];
+    private readonly Dictionary<CCSPlayerController, List<uint>> _playerDataList = [];
     private int _tickCount = 0;
 
     public override void Load(bool hotReload)
@@ -28,8 +28,8 @@ public class AntiWallhack : BasePlugin
 
         if (hotReload)
         {
-            var players = Utilities.GetPlayers().Where(p => !p.IsBot);
-            foreach (var player in players)
+            IEnumerable<CCSPlayerController> players = Utilities.GetPlayers().Where(p => !p.IsBot);
+            foreach (CCSPlayerController? player in players)
                 _playerDataList[player] = [];
         }
     }
@@ -57,11 +57,11 @@ public class AntiWallhack : BasePlugin
     [GameEventHandler]
     public HookResult OnPlayerDeath(EventPlayerDeath @event, GameEventInfo _)
     {
-        if (@event.Userid is not { } player || player.IsBot || player.PlayerPawn.Value?.Handle is not { } handle)
+        if (@event.Userid is not { } player || player.IsBot || player.PlayerPawn.Value?.Index is not { } index)
             return HookResult.Continue;
 
-        foreach (var playerData in _playerDataList.Values)
-            playerData.Remove(handle);
+        foreach (List<uint> playerData in _playerDataList.Values)
+            playerData.Remove(index);
 
         _playerDataList[player] = [];
 
@@ -76,9 +76,9 @@ public class AntiWallhack : BasePlugin
             if (player == null || !_playerDataList.ContainsKey(player))
                 continue;
 
-            foreach (var handle in _playerDataList[player])
+            foreach (uint index in _playerDataList[player])
             {
-                info.TransmitEntities.Remove(new CCSPlayerPawn(handle));
+                info.TransmitEntities.Remove(index);
             }
         }
     }
@@ -93,21 +93,21 @@ public class AntiWallhack : BasePlugin
         }
         _tickCount = 0;
 
-        var players = Utilities.GetPlayers()
+        List<CCSPlayerController> players = Utilities.GetPlayers()
             .Where(p => !p.IsBot && p.PlayerPawn.Value?.LifeState == (byte)LifeState_t.LIFE_ALIVE)
             .ToList();
 
-        var newPlayerDataList = new Dictionary<CCSPlayerController, List<nint>>();
-        foreach (var player in players)
+        Dictionary<CCSPlayerController, List<uint>> newPlayerDataList = [];
+        foreach (CCSPlayerController? player in players)
         {
             newPlayerDataList[player] = [];
         }
 
         _playerDataList.Clear();
 
-        foreach (var player in players)
+        foreach (CCSPlayerController? player in players)
         {
-            foreach (var target in players)
+            foreach (CCSPlayerController? target in players)
             {
                 if (target == player)
                     continue;
@@ -118,11 +118,11 @@ public class AntiWallhack : BasePlugin
                 if (IsAbleToSee(player.PlayerPawn.Value!, target.PlayerPawn.Value!))
                     continue;
 
-                newPlayerDataList[player].Add(target.PlayerPawn.Value!.Handle);
+                newPlayerDataList[player].Add(target.PlayerPawn.Value!.Index);
             }
         }
 
-        foreach (var item in newPlayerDataList)
+        foreach (KeyValuePair<CCSPlayerController, List<uint>> item in newPlayerDataList)
         {
             _playerDataList[item.Key] = item.Value;
         }
@@ -149,8 +149,8 @@ public class AntiWallhack : BasePlugin
         if (IsFwdVecVisible(playerEyePos.Value, targetPawn.EyeAngles, targetEyePos.Value))
             return true;
 
-        var mins = ConvertToVector3(targetPawn.Collision.Mins);
-        var maxs = ConvertToVector3(targetPawn.Collision.Maxs);
+        Vector3 mins = ConvertToVector3(targetPawn.Collision.Mins);
+        Vector3 maxs = ConvertToVector3(targetPawn.Collision.Maxs);
 
         mins.X -= 5;
         mins.Y -= 30;
@@ -191,7 +191,7 @@ public class AntiWallhack : BasePlugin
             new Vector3(bottomCornerVec.X, bottomCornerVec.Y, upperCornerVec.Z),
         ];
 
-        foreach (var corner in corners)
+        foreach (Vector3 corner in corners)
         {
             if (IsPointVisible(corner, startVec))
             {
@@ -203,8 +203,8 @@ public class AntiWallhack : BasePlugin
 
     private static bool IsPointVisible(Vector3 start, Vector3 end)
     {
-        var startVector = new Vector(start.X, start.Y, start.Z);
-        var endVector = new Vector(end.X, end.Y, end.Z);
+        Vector startVector = new(start.X, start.Y, start.Z);
+        Vector endVector = new(end.X, end.Y, end.Z);
         TraceRay.TraceShapeWithResult(startVector, endVector, MASK_STANDARD_SOLID, 4, 0, out bool result);
         return !result;
     }
@@ -229,7 +229,7 @@ public class AntiWallhack : BasePlugin
 
     private static Vector3? GetEyePosition(CCSPlayerPawn playerPawn)
     {
-        var absOrigin = playerPawn.AbsOrigin;
+        Vector? absOrigin = playerPawn.AbsOrigin;
         return absOrigin != null
             ? new Vector3(absOrigin.X, absOrigin.Y, absOrigin.Z + playerPawn.ViewOffset.Z)
             : null;
