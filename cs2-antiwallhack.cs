@@ -13,14 +13,14 @@ namespace AntiWallhack;
 public class AntiWallhack : BasePlugin
 {
     public override string ModuleName => "Anti Wallhack";
-    public override string ModuleVersion => "v2";
+    public override string ModuleVersion => "v3";
     public override string ModuleAuthor => "schwarper";
     public override string ModuleDescription => "Prevents wall hacks from working";
 
     private const uint MASK_STANDARD_SOLID = 0x1 | 0x4000 | 0x80 | 0x2000;
     private ConVar? mp_teammates_are_enemies;
     private readonly Dictionary<CCSPlayerController, List<uint>> _playerDataList = [];
-    private int _tickCount = 0;
+    private bool _tickIgnore;
 
     public override void Load(bool hotReload)
     {
@@ -86,16 +86,12 @@ public class AntiWallhack : BasePlugin
     [ListenerHandler<OnTick>]
     public void OnTick()
     {
-        _tickCount++;
-        if (_tickCount % 10 != 0)
-        {
-            return;
-        }
-        _tickCount = 0;
+        _tickIgnore = !_tickIgnore;
 
-        List<CCSPlayerController> players = Utilities.GetPlayers()
-            .Where(p => !p.IsBot && p.PlayerPawn.Value?.LifeState == (byte)LifeState_t.LIFE_ALIVE)
-            .ToList();
+        if (_tickIgnore)
+            return;
+
+        List<CCSPlayerController> players = [.. Utilities.GetPlayers().Where(p => !p.IsBot && p.PlayerPawn.Value?.LifeState == (byte)LifeState_t.LIFE_ALIVE)];
 
         Dictionary<CCSPlayerController, List<uint>> newPlayerDataList = [];
         foreach (CCSPlayerController? player in players)
@@ -130,32 +126,28 @@ public class AntiWallhack : BasePlugin
 
     private static bool IsAbleToSee(CCSPlayerPawn playerPawn, CCSPlayerPawn targetPawn)
     {
-        Vector3? playerEyePos = GetEyePosition(playerPawn);
+        var playerEyePos = GetEyePosition(playerPawn);
         if (playerEyePos == null)
             return false;
 
-        Vector3 targetOrigin = ConvertToVector3(targetPawn.AbsOrigin!);
-
-        if (!IsFOV(playerEyePos.Value, playerPawn.EyeAngles, targetOrigin))
-            return false;
-
-        if (IsPointVisible(playerEyePos.Value, targetOrigin))
-            return true;
-
-        Vector3? targetEyePos = GetEyePosition(targetPawn);
+        var targetEyePos = GetEyePosition(targetPawn);
         if (targetEyePos == null)
             return false;
 
-        if (IsFwdVecVisible(playerEyePos.Value, targetPawn.EyeAngles, targetEyePos.Value))
+        Vector3 targetOrigin = ConvertToVector3(targetPawn.AbsOrigin!);
+        if (!IsFOV(playerEyePos.Value, playerPawn.EyeAngles, targetOrigin))
+            return false;
+
+        if (IsPointVisible(playerEyePos.Value, targetEyePos.Value))
             return true;
 
         Vector3 mins = ConvertToVector3(targetPawn.Collision.Mins);
         Vector3 maxs = ConvertToVector3(targetPawn.Collision.Maxs);
 
-        mins.X -= 5;
-        mins.Y -= 30;
-        maxs.X += 5;
-        maxs.Y += 5;
+        mins.X -= 15;
+        mins.Y -= 50;
+        maxs.X += 15;
+        maxs.Y += 50;
 
         Vector3 vBoxPrimeMins = targetOrigin + mins;
         Vector3 vBoxPrimeMaxs = targetOrigin + maxs;
@@ -168,13 +160,6 @@ public class AntiWallhack : BasePlugin
         Vector3 normal = GetAngleVectors(angles);
         Vector3 plane = Vector3.Normalize(end - start);
         return Vector3.Distance(start, end) < 75.0 || Vector3.Dot(plane, normal) > 0.0;
-    }
-
-    private static bool IsFwdVecVisible(Vector3 start, QAngle angles, Vector3 end)
-    {
-        Vector3 fwd = GetAngleVectors(angles) * 60.0f;
-        fwd += end;
-        return IsPointVisible(start, fwd);
     }
 
     private static bool IsBoxVisible(Vector3 bottomCornerVec, Vector3 upperCornerVec, Vector3 startVec)
@@ -192,12 +177,9 @@ public class AntiWallhack : BasePlugin
         ];
 
         foreach (Vector3 corner in corners)
-        {
             if (IsPointVisible(corner, startVec))
-            {
                 return true;
-            }
-        }
+
         return false;
     }
 
